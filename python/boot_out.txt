@@ -1,0 +1,2 @@
+Adafruit CircuitPython 7.0.0-dirty on 2021-11-01; Adafruit ItsyBitsy M0 Express with samd21g18
+Board ID:itsybitsy_m0_express
