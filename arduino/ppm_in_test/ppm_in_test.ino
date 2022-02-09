@@ -50,7 +50,7 @@ void loop() {
   
   if(numPulses == PULSE_BUFFER_SIZE){
     noInterrupts();
-    for(int i = 0; i<PULSE_BUFFER_SIZE; i++){
+    for(int i = 1; i<PULSE_BUFFER_SIZE; i++){
       Serial.printf("%4ld ", *getVal(i));
     }
     Serial.println();

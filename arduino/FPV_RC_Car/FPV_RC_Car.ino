@@ -5,7 +5,7 @@
 #define NUM_CHANNELS 8
 #define STEERING_TRIM -5
 
-#define MIN_uS_IN 986
+#define MIN_uS_IN 950
 #define MAX_uS_IN 2050
 
 enum DriveMode {
@@ -86,16 +86,16 @@ boolean updateChannels(){
     if(vIn == NULL){
       valid = false;
     }
-    //Serial.printf("%4d ", *vIn);
+    Serial.printf("%4d ", *vIn);
     channels[i] = ((float)(*vIn) - (float)MIN_uS_IN) / range;
   }
-  //Serial.println();
+  Serial.println();
   return valid;
 }
 
 void loop() {
   if(numPulses > 0){
-    if(*getVal(0) < 3000){
+    if(*getVal(0) < 4000){
       popPulseLeft();
     }
   }
@@ -103,10 +103,6 @@ void loop() {
   if(numPulses == PULSE_BUFFER_SIZE){
     noInterrupts();
     boolean valid = updateChannels();
-    pulseHead = 0;
-    pulseTail = 1;
-    numPulses = 0;
-    interrupts();
     if(valid){
       int steeringAmount = 90;
       int throttleAmount = 90;
@@ -130,7 +126,7 @@ void loop() {
       throttleAmount = constrain(throttleAmount, 0, 180);
       steering.write(steeringAmount);
       throttle.write(throttleAmount);
-      Serial.printf("Steering: %3d Throttle: %3d\n", steeringAmount, throttleAmount);
+      //Serial.printf("Steering: %3d Throttle: %3d\n", steeringAmount, throttleAmount);
       last_update = millis();
     }
     else{
@@ -139,6 +135,10 @@ void loop() {
       throttle.write(90);
       drawInfo.driveMode = DriveMode::NO_CONNECTION;
     }
+    pulseHead = 0;
+    pulseTail = 1;
+    numPulses = 0;
+    interrupts();
   }
 
   if(millis() - last_draw > 40) {
