@@ -1,0 +1,26 @@
+FrSkyPixelOsd library changelog
+--------------------------------------
+Version 20210203
+  [NEW] Added support for v2 of the API (increased max API version sent by the CMD_INFO command, and created a #define which can be modified if needed)
+  [NEW] Added FrSkyPixelOsdWidgetExample
+  [NEW] Added display of v2 API settings to FrSkyPixelOsdExample
+  [NEW] Reworked error handling to be able to return different error codes. Note that this change breaks backwards compatibility - please update your sketches!
+  [NEW] Added font metadata manipulation functions
+  [NEW] Added keywords.txt file for syntax higlighting
+  [NEW] Added support for ATmega2560
+  [NEW] Added a default for bitmap options parameters (BITMAP_OPT_NONE)
+  [NEW] Added some comments to string drawing commands
+  [FIX] Corrected comments to include Teensy 4.1 as well
+  [FIX] Changed types of variables in osd_point_t and osd_size_t structs to signed to match the documentation
+  [FIX] Changed type of angle variable in cmdCtmRotateAboutDeg and cmdCtmRotateAboutDeg functions to signed to allow negative rotation
+  [FIX] Corrected length of strings passed to commands in the FrSkyPixelOsdExample and added display of settings
+
+Version 20200524 (not released publicly)
+  [NEW] Added support for software serial on 328P based boards (uncomment the OSD_USE_SOFTWARE_SERIAL define to use software instead of hardware serial)
+  [FIX] Corrected uvarint calculation
+  [FIX] Added const to string and font payloads pointers
+  [FIX] Increased max response size to cover font upload/download
+  [NEW] Added a TEENSY_HW define to increase code readability
+  
+Version 20200222
+  initial version of the library
