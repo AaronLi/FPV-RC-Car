@@ -24,7 +24,7 @@ struct OSDDrawInfo {
 
 unsigned int pulseBuffer[PULSE_BUFFER_SIZE];
 int pulseHead = 0;
-int pulseTail = 1;
+int pulseTail = 0;
 int numPulses = 0;
 uint32_t last_pulse = micros();
 void pushPulseRight(unsigned int pulse){
@@ -44,13 +44,22 @@ unsigned int popPulseLeft(){
   }
   return 0;
 }
-
-void onPulse(){
-  uint32_t elapsed = micros() - last_pulse;
-  last_pulse = micros();
-  pushPulseRight(elapsed);
+void clearValues(){
+  pulseHead = 0;
+  pulseTail = 0;
+  numPulses = 0;
 }
-
+// interrupt function, called on rising edge of ppm signal
+void onPulse(){
+  uint32_t elapsed = micros() - last_pulse; // time between last pulse and now
+  if(elapsed > 2200 || elapsed < 900){
+    //Serial.println("Clear");
+    clearValues();
+  }
+  //Serial.println(elapsed);
+  pushPulseRight(elapsed);
+  last_pulse = micros();
+}
 unsigned int *getVal(int index){
   if(0 < numPulses && index < numPulses){
     return &pulseBuffer[(pulseHead+index)%PULSE_BUFFER_SIZE];
@@ -94,11 +103,7 @@ boolean updateChannels(){
 }
 
 void loop() {
-  if(numPulses > 0){
-    if(*getVal(0) < 4000){
-      popPulseLeft();
-    }
-  }
+
   
   if(numPulses == PULSE_BUFFER_SIZE){
     noInterrupts();
@@ -135,9 +140,7 @@ void loop() {
       throttle.write(90);
       drawInfo.driveMode = DriveMode::NO_CONNECTION;
     }
-    pulseHead = 0;
-    pulseTail = 1;
-    numPulses = 0;
+    clearValues();
     interrupts();
   }
 
