@@ -8,7 +8,7 @@
 
 #define STEERING_TRIM -5
 
-//#define OSD_ON
+#define OSD_ON
 
 enum DriveMode {
     NO_CONNECTION,
@@ -28,9 +28,7 @@ Uart Serial2(&sercom3, SCL, SDA, SERCOM_RX_PAD_0, UART_TX_PAD_2);
 uint32_t last_update = millis();
 uint32_t last_draw = millis();
 Servo steering, throttle;
-#ifdef OSD_ON
 FrSkyPixelOsd osd(&Serial1);
-#endif
 OSDDrawInfo drawInfo;
 CRSFIn remote;
 
@@ -45,13 +43,11 @@ void setup() {
   throttle.attach(13);
   steering.write(90);
   throttle.write(90);
-  #ifdef OSD_ON
   osd.begin();
   delay(500);
   osd.cmdSetStrokeColor(FrSkyPixelOsd::COLOR_WHITE);
   osd.cmdSetStrokeWidth(3);
   delay(500);
-  #endif
   remote.begin(&Serial2);
 }
 void loop() {
@@ -111,17 +107,12 @@ void loop() {
       char string[] = "OFF";
       osd.cmdDrawGridString(1, 1, string, sizeof(string));
     }
-
     if(drawInfo.driveMode != DriveMode::NO_CONNECTION){
       const int startX = 41;
       const int startY = 40;
       int newX = startX + (int)round(drawInfo.steering * 30.f);
-      osd.cmdSetStrokeColor(FrSkyPixelOsd::COLOR_BLACK);
-      osd.cmdSetStrokeWidth(10);
-      osd.cmdMoveToPoint(startX, startY);
-      osd.cmdStrokeLineToPoint(newX, startY);
       osd.cmdSetStrokeColor(FrSkyPixelOsd::COLOR_WHITE);
-      osd.cmdSetStrokeWidth(6);
+      osd.cmdSetStrokeWidth(10);
       osd.cmdMoveToPoint(startX, startY);
       osd.cmdStrokeLineToPoint(newX, startY);
     }else{
