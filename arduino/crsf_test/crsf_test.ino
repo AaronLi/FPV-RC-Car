@@ -106,7 +106,9 @@ void loop() {
     }
     const int fullFrameLength = currentIndex < 3 ? 5 : min(frame.frame.frameLength + CRSF_FRAME_LENGTH_ADDRESS + CRSF_FRAME_LENGTH_FRAMELENGTH, CRSF_FRAME_SIZE_MAX);
     if(currentIndex < fullFrameLength){
-      frame.bytes[currentIndex++] = Serial2.read();
+      int numBytesAvailable = Serial2.available();
+      int numBytesRead = Serial2.readBytes(&frame.bytes[currentIndex], numBytesAvailable);
+      currentIndex += numBytesRead;
       if(currentIndex >= fullFrameLength){
         if(frame.frame.type == 0x16 && frame.bytes[fullFrameLength-1] == crsfFrameCRC()){
           crsfPayloadRcChannelsPacked_t *channels = (crsfPayloadRcChannelsPacked_t*)&frame.frame.payload;

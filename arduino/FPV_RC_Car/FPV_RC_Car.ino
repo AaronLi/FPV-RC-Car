@@ -1,12 +1,14 @@
+#include <Arduino.h>
+#include "wiring_private.h"
+#include <CRSFIn.h>
+
 #include <FrSkyPixelOsd.h>
 
 #include <Servo.h>
 
-#define NUM_CHANNELS 8
 #define STEERING_TRIM -5
 
-#define MIN_uS_IN 950
-#define MAX_uS_IN 2050
+//#define OSD_ON
 
 enum DriveMode {
     NO_CONNECTION,
@@ -17,110 +19,60 @@ enum DriveMode {
 
 struct OSDDrawInfo {
   DriveMode driveMode;
+  uint8_t led[3];
+  float throttle;
+  float steering;
 };
 
-//############## PPM READING ##############
-#define PULSE_BUFFER_SIZE (NUM_CHANNELS+1)
-
-unsigned int pulseBuffer[PULSE_BUFFER_SIZE];
-int pulseHead = 0;
-int pulseTail = 0;
-int numPulses = 0;
-uint32_t last_pulse = micros();
-void pushPulseRight(unsigned int pulse){
-  if(numPulses < PULSE_BUFFER_SIZE){
-    pulseBuffer[pulseTail] = pulse;
-    numPulses += 1;
-    pulseTail = (pulseTail + 1) % PULSE_BUFFER_SIZE;
-  }
-}
-
-unsigned int popPulseLeft(){
-  if(numPulses > 0){
-    unsigned int pulseOut = pulseBuffer[pulseHead];
-    numPulses -= 1;
-    pulseHead = (pulseHead + 1) % PULSE_BUFFER_SIZE;
-    return pulseOut;
-  }
-  return 0;
-}
-void clearValues(){
-  pulseHead = 0;
-  pulseTail = 0;
-  numPulses = 0;
-}
-// interrupt function, called on rising edge of ppm signal
-void onPulse(){
-  uint32_t elapsed = micros() - last_pulse; // time between last pulse and now
-  if(elapsed > 2200 || elapsed < 900){
-    //Serial.println("Clear");
-    clearValues();
-  }
-  //Serial.println(elapsed);
-  pushPulseRight(elapsed);
-  last_pulse = micros();
-}
-unsigned int *getVal(int index){
-  if(0 < numPulses && index < numPulses){
-    return &pulseBuffer[(pulseHead+index)%PULSE_BUFFER_SIZE];
-  }
-  return NULL;
-}
-//###########################################
-
+Uart Serial2(&sercom3, SCL, SDA, SERCOM_RX_PAD_0, UART_TX_PAD_2);
 uint32_t last_update = millis();
 uint32_t last_draw = millis();
 Servo steering, throttle;
-float channels[NUM_CHANNELS];
+#ifdef OSD_ON
 FrSkyPixelOsd osd(&Serial1);
+#endif
 OSDDrawInfo drawInfo;
+CRSFIn remote;
 
-void setup() {
-  Serial.begin(115200);
+void SERCOM3_Handler(){
+  Serial2.IrqHandler();
+}
+
+void setup() { 
+  pinPeripheral(SDA, PIO_SERCOM);
+  pinPeripheral(SCL, PIO_SERCOM);
   steering.attach(5);
   throttle.attach(13);
   steering.write(90);
   throttle.write(90);
+  #ifdef OSD_ON
   osd.begin();
+  delay(500);
   osd.cmdSetStrokeColor(FrSkyPixelOsd::COLOR_WHITE);
   osd.cmdSetStrokeWidth(3);
-  attachInterrupt(SDA, onPulse, RISING);
+  delay(500);
+  #endif
+  remote.begin(&Serial2);
 }
-
-boolean updateChannels(){
-  boolean valid = true;
-  float range = (float)MAX_uS_IN - (float)MIN_uS_IN;
-  for (int i = 0; i<NUM_CHANNELS; i++){
-    unsigned int *vIn = getVal(i+1);
-    if(vIn == NULL){
-      valid = false;
-    }
-    Serial.printf("%4d ", *vIn);
-    channels[i] = ((float)(*vIn) - (float)MIN_uS_IN) / range;
-  }
-  Serial.println();
-  return valid;
-}
-
 void loop() {
 
   
-  if(numPulses == PULSE_BUFFER_SIZE){
-    noInterrupts();
-    boolean valid = updateChannels();
-    if(valid){
+  if(remote.update()){
       int steeringAmount = 90;
       int throttleAmount = 90;
-      if(channels[2] < 0.33) {
-        steeringAmount = (int)(channels[1] * 180.f);
-        throttleAmount = (int)(channels[0] * 180.f);
+      float throttleInput = remote.getChannelFloat(0);
+      float steeringInput = remote.getChannelFloat(1);
+      float modeSelect = remote.getChannelFloat(2);
+      if(modeSelect < 0.33) {
+        steeringAmount = (int)(steeringInput * 180.f);
+        throttleAmount = (int)(throttleInput * 180.f);
         drawInfo.driveMode = DriveMode::DIRECT; 
-      }else if(channels[2] < 0.66) {
-        steeringAmount = (int)(channels[1] * 180.f);
-        float turn_reduction_strength = 0.7f*(2.f * abs(channels[1]-0.5f));
+      }else if(modeSelect < 0.66) {
+        steeringAmount = (int)(steeringInput * 180.f);
+        float turn_reduction_strength = 0.7f*(2.f * abs(steeringInput-0.5f));
         float turn_reduction_factor = 1.f - turn_reduction_strength;
-        
-        throttleAmount = (int)(channels[0] * turn_reduction_factor * 180.f);
+        float throttleCentered = 2.f*(throttleInput-0.5f);
+        throttleAmount = (int)(throttleCentered * turn_reduction_factor * 90.f + 90.f);
         drawInfo.driveMode = DriveMode::TURN_ASSIST;
       }
       else {
@@ -131,43 +83,56 @@ void loop() {
       throttleAmount = constrain(throttleAmount, 0, 180);
       steering.write(steeringAmount);
       throttle.write(throttleAmount);
-      //Serial.printf("Steering: %3d Throttle: %3d\n", steeringAmount, throttleAmount);
+      drawInfo.throttle = (float)(throttleAmount - 90) / 90.f;
+      drawInfo.steering = (float)(steeringAmount - 90) / 90.f;     
       last_update = millis();
-    }
-    else{
-      Serial.println("No connection");
-      steering.write(90);
-      throttle.write(90);
-      drawInfo.driveMode = DriveMode::NO_CONNECTION;
-    }
-    clearValues();
-    interrupts();
   }
 
-  if(millis() - last_draw > 40) {
+  if(millis() - last_update > 500){
+    //Serial.println("No connection");
+    steering.write(90);
+    throttle.write(90);
+    drawInfo.driveMode = DriveMode::NO_CONNECTION;
+  }
+  #ifdef OSD_ON
+  if(millis() - last_draw > 100) {
     osd.cmdTransactionBegin();
-    char *string;
-    switch(drawInfo.driveMode){
-      case DriveMode::DIRECT:
-        string = "DIRECT";
-        osd.cmdDrawString(1, 1, string, sizeof(string));
-      break;
-      case DriveMode::NO_CONNECTION:
-        string = "NO CONNECTION";
-        osd.cmdDrawString(1, 1, string, sizeof(string));
-      break;
-      case DriveMode::TURN_ASSIST:
-        string = "TURN ASSIST";
-        osd.cmdDrawString(1, 1, string, sizeof(string));
-      break;
-      case DriveMode::OFF:
-        string = "OFF";
-        osd.cmdDrawString(1, 1, string, sizeof(string));
-      break;
-      
+    osd.cmdClearRect(0, 0, 380, 252);
+    if(drawInfo.driveMode == DriveMode::DIRECT){
+      char string[] = "DIRECT";
+      osd.cmdDrawGridString(1, 1, string, sizeof(string));
+    }else if(drawInfo.driveMode == DriveMode::TURN_ASSIST){
+      char string[] = "TURN ASSIST";
+      osd.cmdDrawGridString(1, 1, string, sizeof(string));
+    }else if(drawInfo.driveMode == DriveMode::NO_CONNECTION){
+      char string[] = "NO CONNECTION";
+      osd.cmdDrawGridString(1, 1, string, sizeof(string));
+    }else if(drawInfo.driveMode == DriveMode::OFF){
+      char string[] = "OFF";
+      osd.cmdDrawGridString(1, 1, string, sizeof(string));
+    }
+
+    if(drawInfo.driveMode != DriveMode::NO_CONNECTION){
+      const int startX = 41;
+      const int startY = 40;
+      int newX = startX + (int)round(drawInfo.steering * 30.f);
+      osd.cmdSetStrokeColor(FrSkyPixelOsd::COLOR_BLACK);
+      osd.cmdSetStrokeWidth(10);
+      osd.cmdMoveToPoint(startX, startY);
+      osd.cmdStrokeLineToPoint(newX, startY);
+      osd.cmdSetStrokeColor(FrSkyPixelOsd::COLOR_WHITE);
+      osd.cmdSetStrokeWidth(6);
+      osd.cmdMoveToPoint(startX, startY);
+      osd.cmdStrokeLineToPoint(newX, startY);
+    }else{
+      osd.cmdSetStrokeColor(FrSkyPixelOsd::COLOR_WHITE);
+      osd.cmdSetStrokeWidth(6);
+      osd.cmdMoveToPoint(91, 40);
+      osd.cmdStrokeLineToPoint(91 + (int)(80.f * sin(PI * 2 * (((float)(millis() - last_update)) / 1000.f)/3.f)), 40);
     }
     
     osd.cmdTransactionCommit();
     last_draw = millis();
   }
+  #endif
 }
