@@ -19,15 +19,17 @@ enum DriveMode {
 
 struct OSDDrawInfo {
   DriveMode driveMode;
-  uint8_t led[3];
+  bool lightsOn = false;
   float throttle;
   float steering;
+  float throttleInput;
+  float steeringInput;
 };
 
 Uart Serial2(&sercom3, SCL, SDA, SERCOM_RX_PAD_0, UART_TX_PAD_2);
 uint32_t last_update = millis();
 uint32_t last_draw = millis();
-Servo steering, throttle;
+Servo steering, throttle, lights;
 FrSkyPixelOsd osd(&Serial1);
 OSDDrawInfo drawInfo;
 CRSFIn remote;
@@ -39,16 +41,19 @@ void SERCOM3_Handler(){
 void setup() { 
   pinPeripheral(SDA, PIO_SERCOM);
   pinPeripheral(SCL, PIO_SERCOM);
-  steering.attach(5);
-  throttle.attach(13);
-  steering.write(90);
-  throttle.write(90);
   osd.begin();
   delay(500);
   osd.cmdSetStrokeColor(FrSkyPixelOsd::COLOR_WHITE);
   osd.cmdSetStrokeWidth(3);
   delay(500);
   remote.begin(&Serial2);
+
+  steering.attach(5);
+  throttle.attach(13);
+  lights.attach(10);
+  steering.write(90);
+  throttle.write(90);
+  lights.write(0);
 }
 void loop() {
 
@@ -58,6 +63,8 @@ void loop() {
       int throttleAmount = 90;
       float throttleInput = remote.getChannelFloat(0);
       float steeringInput = remote.getChannelFloat(1);
+      drawInfo.throttleInput = throttleInput;
+      drawInfo.steeringInput = steeringInput;
       float modeSelect = remote.getChannelFloat(2);
       if(modeSelect < 0.33) {
         steeringAmount = (int)(steeringInput * 180.f);
@@ -79,6 +86,8 @@ void loop() {
       throttleAmount = constrain(throttleAmount, 0, 180);
       steering.write(steeringAmount);
       throttle.write(throttleAmount);
+      lights.write(remote.getChannelFloat(3) * 180.f);
+      drawInfo.lightsOn = (remote.getChannelFloat(3) * 180.f) > 90.f;
       drawInfo.throttle = (float)(throttleAmount - 90) / 90.f;
       drawInfo.steering = (float)(steeringAmount - 90) / 90.f;     
       last_update = millis();
@@ -88,10 +97,11 @@ void loop() {
     //Serial.println("No connection");
     steering.write(90);
     throttle.write(90);
+    lights.write(0);
     drawInfo.driveMode = DriveMode::NO_CONNECTION;
   }
   #ifdef OSD_ON
-  if(millis() - last_draw > 100) {
+  if(millis() - last_draw > 50 ) {
     osd.cmdTransactionBegin();
     osd.cmdClearRect(0, 0, 380, 252);
     if(drawInfo.driveMode == DriveMode::DIRECT){
@@ -108,13 +118,23 @@ void loop() {
       osd.cmdDrawGridString(1, 1, string, sizeof(string));
     }
     if(drawInfo.driveMode != DriveMode::NO_CONNECTION){
-      const int startX = 41;
-      const int startY = 40;
-      int newX = startX + (int)round(drawInfo.steering * 30.f);
+      const int startX = 40;
+      const int startY = 70;
+      const int circleRadius = 30;
+      
       osd.cmdSetStrokeColor(FrSkyPixelOsd::COLOR_WHITE);
-      osd.cmdSetStrokeWidth(10);
-      osd.cmdMoveToPoint(startX, startY);
-      osd.cmdStrokeLineToPoint(newX, startY);
+      osd.cmdStrokeEllipseInRect(startX - circleRadius, startY - circleRadius, 2 * circleRadius, 2 * circleRadius);
+      for(int i = 1; i< 2; i++){
+        const int endX = (int)(circleRadius * cos(2. * PI * (2. * (drawInfo.steeringInput - 0.5)) / 2. + i * PI / 2.));
+        const int endY = (int)(circleRadius * sin(2. * PI * (2. * (drawInfo.steeringInput - 0.5)) / 2. + i * PI / 2.));
+        osd.cmdMoveToPoint(startX, startY);
+        osd.cmdStrokeLineToPoint(startX+endX, startY+endY);
+      }
+      
+//      osd.cmdSetStrokeColor(FrSkyPixelOsd::COLOR_WHITE);
+//      osd.cmdSetStrokeWidth(10);
+//      osd.cmdMoveToPoint(startX, startY);
+//      osd.cmdStrokeLineToPoint(newX, startY);
     }else{
       osd.cmdSetStrokeColor(FrSkyPixelOsd::COLOR_WHITE);
       osd.cmdSetStrokeWidth(6);
