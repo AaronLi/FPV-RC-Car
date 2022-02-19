@@ -6,9 +6,9 @@
 
 #include <Servo.h>
 
-#define STEERING_TRIM -5
+#define STEERING_TRIM -10
 
-#define OSD_ON
+//#define OSD_ON
 
 enum DriveMode {
     NO_CONNECTION,
